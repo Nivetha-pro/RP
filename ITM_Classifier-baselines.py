@@ -48,6 +48,7 @@ import time
 import pickle
 import torch
 import random
+import time
 import numpy as np
 import torch.nn as nn
 import torch.optim as optim
@@ -247,39 +248,50 @@ def train_model(model, ARCHITECTURE, train_loader, criterion, optimiser, num_epo
         elapsed_time = time.time() - start_time
         print(f'Epoch [{epoch + 1}/{num_epochs}] Average Loss: {avg_loss:.4f}, {elapsed_time:.2f} seconds')
 
+
 def evaluate_model(model, ARCHITECTURE, test_loader, device):
     print(f'EVALUATING %s model' % (ARCHITECTURE))
     model.eval()
     total_test_loss = 0
+    correct_predictions = 0
+    total_samples = 0
     all_labels = []
     all_predictions = []
+    all_probs = []  # For MRR
     start_time = time.time()
 
     with torch.no_grad():
         for images, question_embeddings, answer_embeddings, labels in test_loader:
-            # Move images/text/labels to the GPU (if available)
             images = images.to(device)          
             question_embeddings = question_embeddings.to(device) 
             answer_embeddings = answer_embeddings.to(device)  
-            labels = labels.to(device)  # Labels are single integers (0 or 1)
-			
-            # Perform forward pass on our data
+            labels = labels.to(device)
+
+            # Forward pass
             outputs = model(images, question_embeddings, answer_embeddings)
-			
-            # Accumulate loss on test data
-            total_test_loss += criterion(outputs, labels)  
 
-            # Since outputs are logits, apply softmax to get probabilities
-            predicted_probabilities = torch.softmax(outputs, dim=1)  # Use softmax for multi-class output
-            predicted_class = predicted_probabilities.argmax(dim=1)  # Get the predicted class index (0 or 1)
+            # Calculate loss
+            total_test_loss += criterion(outputs, labels)
 
-            # Store labels and predictions for later analysis
+            # Softmax to get probabilities and calculate predictions
+            predicted_probabilities = torch.softmax(outputs, dim=1)
+            predicted_class = predicted_probabilities.argmax(dim=1)
+
+            # Track accuracy
+            correct_predictions += (predicted_class == labels).sum().item()
+            total_samples += labels.size(0)
+
+            # Store probabilities and labels for MRR calculation
             all_labels.extend(labels.cpu().numpy())
             all_predictions.extend(predicted_class.cpu().numpy())
+            all_probs.extend(predicted_probabilities.cpu().numpy())
 
-    # Convert to numpy arrays for easier calculations
-    all_labels = np.array(all_labels)
-    all_predictions = np.array(all_predictions)
+    # Calculate and print Classification Accuracy as a decimal (0 to 1)
+    accuracy = correct_predictions / total_samples  # No need to multiply by 100
+    print(f'Classification Accuracy: {accuracy:.4f}')  # Now displayed as float
+
+    # Calculate Mean Reciprocal Rank (MRR)
+    mrr = calculate_mrr(all_labels, all_probs)
 
     # Calculate true positives, true negatives, false positives, false negatives
     tp = np.sum((all_predictions == 1) & (all_labels == 1))  # True positives
@@ -293,8 +305,20 @@ def evaluate_model(model, ARCHITECTURE, test_loader, device):
     balanced_accuracy = (sensitivity + specificity) / 2.0
 
     elapsed_time = time.time() - start_time
-    print(f'Balanced Accuracy: {balanced_accuracy:.4f}, {elapsed_time:.2f} seconds')
+    print(f'Mean Reciprocal Rank: {mrr:.4f}')
     print(f'Total Test Loss: {total_test_loss:.4f}')
+    print(f'Time taken for evaluation: {elapsed_time:.2f} seconds')
+
+def calculate_mrr(labels, probabilities):
+    mrr = 0
+    for i, label in enumerate(labels):
+        # Sort probabilities in descending order for this sample
+        ranked_indices = np.argsort(probabilities[i])[::-1]
+        # Find the rank of the true label (position starts at 1)
+        rank = np.where(ranked_indices == label)[0][0] + 1
+        mrr += 1 / rank
+    mrr /= len(labels)
+    return mrr
 
 
 # Main Execution
