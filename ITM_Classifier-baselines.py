@@ -336,7 +336,7 @@ if __name__ == '__main__':
     sentence_embeddings = load_sentence_embeddings(sentence_embeddings_file)
 
     # Create datasets and loaders
-    train_dataset = ITM_Dataset(IMAGES_PATH, train_data_file, sentence_embeddings, data_split="train", train_ratio=0.2)
+    train_dataset = ITM_Dataset(IMAGES_PATH, train_data_file, sentence_embeddings, data_split="train", train_ratio=0.8)
     train_loader = DataLoader(train_dataset, batch_size=16, shuffle=True)
     test_dataset = ITM_Dataset(IMAGES_PATH, test_data_file, sentence_embeddings, data_split="test")  # whole test data
     test_loader = DataLoader(test_dataset, batch_size=16, shuffle=False)
@@ -367,6 +367,6 @@ if __name__ == '__main__':
     optimiser = torch.optim.AdamW(model.parameters(), lr=3e-5, weight_decay=1e-4)
 
     # Train and evaluate the model
-    train_model(model, MODEL_ARCHITECTURE, train_loader, criterion, optimiser, num_epochs=10)
+    train_model(model, MODEL_ARCHITECTURE, train_loader, criterion, optimiser, num_epochs=20)
     evaluate_model(model, MODEL_ARCHITECTURE, test_loader, device)
 
