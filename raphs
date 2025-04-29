@@ -1,63 +1,50 @@
 import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
-import scipy.stats as stats
+from scipy import stats
 import seaborn as sns
 from matplotlib.ticker import MaxNLocator
 
 # Set the style for the plots
 plt.style.use('seaborn-v0_8-whitegrid')
-sns.set_context("paper", font_scale=1.2)
+sns.set_context("talk", font_scale=1.1)
 
-# Create a function to convert time entries to seconds
+# Function to convert time entries to seconds
 def convert_to_seconds(time_str):
     if pd.isna(time_str):
         return np.nan
-    
     time_str = str(time_str).lower().strip()
-    
+
     if time_str == 'yes':
-        return 90  # As instructed
-    
+        return 90
     if 'min' in time_str:
         if 'less than 5 mins' in time_str:
             return 240
         elif '5-25 min' in time_str:
             return 900
         else:
-            # Extract numeric part and convert to seconds
             nums = [int(s) for s in time_str.split() if s.isdigit()]
-            if nums:
-                return nums[0] * 60
-            return 60  # Default if no number found
-            
+            return nums[0] * 60 if nums else 60
     if 'sec' in time_str:
         if '-' in time_str:
-            # Handle ranges like "10-25sec"
             parts = time_str.split('-')
             try:
                 lower = int(''.join(filter(str.isdigit, parts[0])))
                 upper = int(''.join(filter(str.isdigit, parts[1])))
                 return (lower + upper) / 2
             except:
-                return 15  # Default midpoint
+                return 15
         else:
-            # Extract numeric part
             nums = [int(s) for s in time_str.split() if s.isdigit()]
-            if nums:
-                return nums[0]
-            return 15  # Default if no number found
-    
+            return nums[0] if nums else 15
     if 'more than 1 min' in time_str:
         return 90
-        
-    # If just a number without units, assume seconds
     try:
         return float(time_str)
     except:
         return np.nan
 
-# Create DataFrame with the survey data
+# Sample data
 data = {
     "Timestamp": [
         "2025/04/22 11:23:16 am CET", "2025/04/22 11:23:45 am CET", "2025/04/22 11:25:02 am CET",
@@ -107,160 +94,110 @@ data = {
 }
 
 df = pd.DataFrame(data)
-
-# Convert login time to seconds
 df['Login_Time_Seconds'] = df['Login_Time'].apply(convert_to_seconds)
-
-# Create a new column for authentication method category
 df['Auth_Category'] = df['Login_Method'].apply(lambda x: '2FA' if '2FA' in x else 'Password-only')
-
-# Filter out one row that didn't consent
 df = df[df['Issues'] != 'No (If no, use form logic to end the form)']
 
-# Calculate statistics
+# Stats by authentication method
 stats_by_auth = df.groupby('Auth_Category').agg({
     'Login_Time_Seconds': ['mean', 'std', 'count'],
     'Security_Rating': ['mean', 'std', 'count'],
     'Ease_Rating': ['mean', 'std']
 }).reset_index()
 
-# For cleaner display
-stats_by_auth.columns = ['Auth_Category', 'Mean_Login_Time', 'SD_Login_Time', 'Count_Login_Time', 
+stats_by_auth.columns = ['Auth_Category', 'Mean_Login_Time', 'SD_Login_Time', 'Count_Login_Time',
                          'Mean_Security', 'SD_Security', 'Count_Security', 'Mean_Ease', 'SD_Ease']
 
-print("Statistics by Authentication Method:")
-print(stats_by_auth)
-
-# Calculate statistics for 2FA types
+# Stats by 2FA type
 stats_by_2fa = df[df['Auth_Category'] == '2FA'].groupby('2FA_Type').agg({
     'Login_Time_Seconds': ['mean', 'std', 'count'],
     'Security_Rating': ['mean', 'std']
 }).reset_index()
-
-stats_by_2fa.columns = ['2FA_Type', 'Mean_Login_Time', 'SD_Login_Time', 'Count', 
+stats_by_2fa.columns = ['2FA_Type', 'Mean_Login_Time', 'SD_Login_Time', 'Count',
                         'Mean_Security', 'SD_Security']
 
-print("\nStatistics by 2FA Type:")
-print(stats_by_2fa)
+# T-tests
+t_stat, p_val_time = stats.ttest_ind(
+    df[df['Auth_Category'] == 'Password-only']['Login_Time_Seconds'].dropna(),
+    df[df['Auth_Category'] == '2FA']['Login_Time_Seconds'].dropna(),
+    equal_var=False
+)
+print(f"\nIndependent t-test for Login Time: t = {t_stat:.3f}, p = {p_val_time:.3f}")
 
-# Perform t-test for login time
-password_login_times = df[df['Auth_Category'] == 'Password-only']['Login_Time_Seconds'].dropna()
-twofa_login_times = df[df['Auth_Category'] == '2FA']['Login_Time_Seconds'].dropna()
+t_stat, p_val_security = stats.ttest_ind(
+    df[df['Auth_Category'] == 'Password-only']['Security_Rating'],
+    df[df['Auth_Category'] == '2FA']['Security_Rating'],
+    equal_var=False
+)
+print(f"Independent t-test for Security Perception: t = {t_stat:.3f}, p = {p_val_security:.3f}")
 
-t_stat, p_val_time = stats.ttest_ind(password_login_times, twofa_login_times, equal_var=False)
-print(f"\nIndependent t-test for Login Time: t({len(password_login_times) + len(twofa_login_times) - 2}) = {t_stat:.3f}, p = {p_val_time:.3f}")
+# Spearman correlation
+valid_rows = df.dropna(subset=['Login_Time_Seconds', 'Security_Rating'])
+correlation, p_value = stats.spearmanr(valid_rows['Login_Time_Seconds'], valid_rows['Security_Rating'])
+print(f"Spearman correlation: ρ = {correlation:.3f}, p = {p_value:.3f}")
 
-# Perform t-test for security perception
-password_security = df[df['Auth_Category'] == 'Password-only']['Security_Rating']
-twofa_security = df[df['Auth_Category'] == '2FA']['Security_Rating']
-
-t_stat, p_val_security = stats.ttest_ind(password_security, twofa_security, equal_var=False)
-print(f"Independent t-test for Security Perception: t({len(password_security) + len(twofa_security) - 2}) = {t_stat:.3f}, p = {p_val_security:.3f}")
-
-# Spearman correlation between login time and security perception
-correlation, p_value = stats.spearmanr(df['Login_Time_Seconds'].dropna(), df['Security_Rating'].dropna())
-print(f"Spearman correlation between login time and security perception: ρ = {correlation:.3f}, p = {p_value:.3f}")
-
-# Create visualizations
-
-# Figure 1: Login Time Comparison
+# Plot 1: Login time by auth method
 plt.figure(figsize=(10, 6))
 ax = sns.barplot(x='Auth_Category', y='Mean_Login_Time', data=stats_by_auth, palette="Blues_d")
-
-# Add error bars
 for i, row in stats_by_auth.iterrows():
-    ax.errorbar(i, row['Mean_Login_Time'], yerr=row['SD_Login_Time']/np.sqrt(row['Count_Login_Time']), 
-                color='black', linewidth=1, capsize=10)
-
-# Add data labels
-for i, v in enumerate(stats_by_auth['Mean_Login_Time']):
-    ax.text(i, v + 5, f"{v:.1f}s", ha='center', va='bottom', fontweight='bold')
-
-plt.title('Mean Login Time by Authentication Method', fontsize=16)
-plt.xlabel('Authentication Method', fontsize=14)
-plt.ylabel('Login Time (seconds)', fontsize=14)
+    ax.errorbar(i, row['Mean_Login_Time'], yerr=row['SD_Login_Time']/np.sqrt(row['Count_Login_Time']),
+                color='black', linewidth=1.5, capsize=8)
+    ax.text(i, row['Mean_Login_Time'] + 5, f"{row['Mean_Login_Time']:.1f}s", ha='center')
+plt.title('Mean Login Time by Authentication Method')
+plt.ylabel('Login Time (seconds)')
 plt.tight_layout()
-plt.savefig('login_time_comparison.png', dpi=300, bbox_inches='tight')
+plt.show()
 
-# Figure 2: Security Perception Comparison
+# Plot 2: Security rating by auth method
 plt.figure(figsize=(10, 6))
 ax = sns.barplot(x='Auth_Category', y='Mean_Security', data=stats_by_auth, palette="Greens_d")
-
-# Add error bars
 for i, row in stats_by_auth.iterrows():
-    ax.errorbar(i, row['Mean_Security'], yerr=row['SD_Security']/np.sqrt(row['Count_Security']), 
-                color='black', linewidth=1, capsize=10)
-
-# Add data labels
-for i, v in enumerate(stats_by_auth['Mean_Security']):
-    ax.text(i, v + 0.1, f"{v:.2f}", ha='center', va='bottom', fontweight='bold')
-
-plt.title('Mean Security Perception by Authentication Method', fontsize=16)
-plt.xlabel('Authentication Method', fontsize=14)
-plt.ylabel('Security Rating (1-5 scale)', fontsize=14)
-plt.ylim(0, 5.5)  # Set y-axis to show full 1-5 scale
+    ax.errorbar(i, row['Mean_Security'], yerr=row['SD_Security']/np.sqrt(row['Count_Security']),
+                color='black', linewidth=1.5, capsize=8)
+    ax.text(i, row['Mean_Security'] + 0.15, f"{row['Mean_Security']:.2f}", ha='center')
+plt.title('Perceived Security Rating by Authentication Method')
+plt.ylabel('Security Rating (1–5)')
+plt.ylim(0, 5.5)
 plt.tight_layout()
-plt.savefig('security_perception_comparison.png', dpi=300, bbox_inches='tight')
+plt.show()
 
-# Figure 3: Login Time vs Security Perception Scatter Plot
+# Plot 3: Login time vs security rating
 plt.figure(figsize=(10, 6))
-sns.regplot(x='Login_Time_Seconds', y='Security_Rating', data=df, scatter_kws={'alpha':0.6}, line_kws={'color':'red'})
-plt.title(f'Relationship Between Login Time and Security Perception\nSpearman ρ = {correlation:.2f}, p = {p_value:.3f}', fontsize=14)
-plt.xlabel('Login Time (seconds)', fontsize=14)
-plt.ylabel('Security Rating (1-5 scale)', fontsize=14)
+sns.regplot(x='Login_Time_Seconds', y='Security_Rating', data=valid_rows,
+            scatter_kws={'alpha': 0.6}, line_kws={'color': 'red'})
+plt.title(f'Login Time vs. Security Perception\nSpearman ρ = {correlation:.2f}, p = {p_value:.3f}')
+plt.xlabel('Login Time (seconds)')
+plt.ylabel('Security Rating (1–5)')
 plt.tight_layout()
-plt.savefig('login_time_vs_security.png', dpi=300, bbox_inches='tight')
+plt.show()
 
-# Figure 4: 2FA Methods Comparison
+# Plot 4: 2FA types comparison
 if not stats_by_2fa.empty:
-    plt.figure(figsize=(12, 8))
-    
+    fig, ax1 = plt.subplots(figsize=(12, 6))
     x = np.arange(len(stats_by_2fa))
     width = 0.35
-    
-    fig, ax1 = plt.subplots(figsize=(12, 6))
-    
-    # Plot login time (left axis)
-    bars1 = ax1.bar(x - width/2, stats_by_2fa['Mean_Login_Time'], width, label='Login Time (seconds)', color='skyblue')
-    ax1.set_ylabel('Login Time (seconds)', fontsize=14)
-    ax1.set_ylim(0, max(stats_by_2fa['Mean_Login_Time']) * 1.5)
-    
-    # Create second y-axis for security rating
+    ax1.bar(x - width/2, stats_by_2fa['Mean_Login_Time'], width, label='Login Time', color='skyblue')
+    ax1.set_ylabel('Login Time (s)')
     ax2 = ax1.twinx()
-    bars2 = ax2.bar(x + width/2, stats_by_2fa['Mean_Security'], width, label='Security Rating', color='lightgreen')
-    ax2.set_ylabel('Security Rating (1-5)', fontsize=14)
-    ax2.set_ylim(0, 5.5)
-    
-    # Set x-axis labels
+    ax2.bar(x + width/2, stats_by_2fa['Mean_Security'], width, label='Security Rating', color='lightgreen')
+    ax2.set_ylabel('Security Rating (1–5)')
     ax1.set_xticks(x)
     ax1.set_xticklabels(stats_by_2fa['2FA_Type'], rotation=45, ha='right')
-    
-    # Add a legend
-    handles1, labels1 = ax1.get_legend_handles_labels()
-    handles2, labels2 = ax2.get_legend_handles_labels()
-    ax1.legend(handles1 + handles2, labels1 + labels2, loc='upper right')
-    
-    plt.title('Comparison of Different 2FA Methods', fontsize=16)
+    ax1.set_title('Comparison of Different 2FA Methods')
+    ax1.legend(loc='upper left')
+    ax2.legend(loc='upper right')
     plt.tight_layout()
-    plt.savefig('2fa_methods_comparison.png', dpi=300, bbox_inches='tight')
+    plt.show()
 
-# Figure 5: Login Issues by Authentication Method
-plt.figure(figsize=(10, 6))
+# Plot 5: Login issues by auth method
 issue_data = df.groupby(['Auth_Category', 'Issues']).size().unstack(fill_value=0)
 issue_data_percent = issue_data.div(issue_data.sum(axis=1), axis=0) * 100
-
 ax = issue_data_percent.plot(kind='bar', stacked=True, figsize=(10, 6), color=['#ff9999','#66b3ff'])
-plt.title('Login Issues by Authentication Method', fontsize=16)
-plt.xlabel('Authentication Method', fontsize=14)
-plt.ylabel('Percentage of Responses', fontsize=14)
-plt.legend(title='Issues Reported')
-
-# Add percentage labels
+plt.title('Login Issues by Authentication Method')
+plt.ylabel('Percentage of Responses')
+plt.xlabel('Authentication Method')
 for c in ax.containers:
     labels = [f'{v:.1f}%' if v > 0 else '' for v in c.datavalues]
     ax.bar_label(c, labels=labels, label_type='center')
-
 plt.tight_layout()
-plt.savefig('login_issues_comparison.png', dpi=300, bbox_inches='tight')
-
-print("\nAll visualizations have been saved as PNG files.")
+plt.show()
