@@ -241,6 +241,9 @@ class DRL_Agent:
         steps_per_episode = 0
         reward_per_episode = 0
 
+        print("Testing started...")
+        start_time = time.time()
+
         while True:
             action, _states = self.model.predict(obs, deterministic=True)
             obs, reward, done, info = env.step(action)
@@ -264,14 +267,15 @@ class DRL_Agent:
                 time.sleep(self.rendering_delay)
 
             if episode > self.num_test_episodes:
+                elapsed_time = time.time() - start_time
                 print(f"\n=== METRICS SUMMARY ===")
                 print(f"Avg_Reward: {np.mean(rewards_list):.2f}")
                 print(f"Avg_Steps_per_Episode: {np.mean(steps_list):.2f}")
 
                 if score_list:
-                    print(f"Avg_Game_Score: {np.mean(score_list):.2f}")
-                print(f"Total_Cumulative_Reward: {total_cummulative_reward:.2f}")
-                print(f"Avg_Cumulative_Reward: {total_cummulative_reward / self.num_test_episodes:.2f}")
+                 print(f"Testing completed in {elapsed_time:.2f} seconds.")
+                 print(f"Total_Cumulative_Reward: {total_cummulative_reward:.2f}")
+                 print(f"Avg_Cumulative_Reward: {total_cummulative_reward / self.num_test_episodes:.2f}")
                 break
 
         env.close()
