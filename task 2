@@ -127,6 +127,8 @@ class DRL_Agent:
         self.model = None # initialises the model that will define the agent's policy & learning behavior
         self.policy = None # initialises the policy to "MlpPolicy" or "CnnPolicy" depending on the environment
         self.environment = None # initialises the environment as None, to be set later (gym environment)
+        self.train_start_time = None
+        self.train_end_time = None
 
         self._check_environment()
         self._create_log_directory()
@@ -213,7 +215,13 @@ class DRL_Agent:
     def train_or_load_model(self):
         print(self.model)
         if self.train_mode:
+            self.train_start_time = time.time()
             self.model.learn(total_timesteps=self.training_timesteps)
+            self.train_end_time = time.time()
+            duration = self.train_end_time - self.train_start_time
+            print(f"Training time: {duration:.2f} seconds")
+            with open("training_time.txt", "w") as f:
+                f.write(f"Training time: {duration:.2f} seconds\n")
             print(f"Saving policy {self.policy_filename}")
             pickle.dump(self.model.policy, open(self.policy_filename, 'wb'))
         else:
@@ -276,6 +284,12 @@ class DRL_Agent:
                  print(f"Testing completed in {elapsed_time:.2f} seconds.")
                  print(f"Total_Cumulative_Reward: {total_cummulative_reward:.2f}")
                  print(f"Avg_Cumulative_Reward: {total_cummulative_reward / self.num_test_episodes:.2f}")
+                 # Display training time from file if available
+                if os.path.exists("training_time.txt"):
+                    with open("training_time.txt", "r") as f:
+                        training_time = f.read().strip()
+                    print(f"Training_Time: {training_time} seconds")
+        
                 break
 
         env.close()
